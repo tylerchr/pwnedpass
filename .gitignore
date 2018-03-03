@@ -1,0 +1,9 @@
+# binaries
+/pwnd
+/pwngen
+
+# code coverage
+cov.out
+
+# massive data files
+/pwned-passwords-*
