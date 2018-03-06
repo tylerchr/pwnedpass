@@ -102,8 +102,6 @@ func main() {
 // and returns it if so.
 func isHash(s string) (hash [20]byte, ok bool) {
 
-	fmt.Println(hex.Dump([]byte(s)))
-
 	// not a hash if it's not the right length
 	if len(s) != 40 {
 		ok = false
