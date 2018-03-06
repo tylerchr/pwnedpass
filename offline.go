@@ -10,6 +10,18 @@ import (
 	"golang.org/x/exp/mmap"
 )
 
+const (
+	// DatabaseFilename is the default path to the database.
+	DatabaseFilename = "pwned-passwords.bin"
+
+	// IndexSegmentSize is the exact size of the index segment in bytes.
+	IndexSegmentSize = 256 << 16 << 3 // exactly 256^3 MB
+
+	// DataSegmentOffset indicates the byte offset in the database where
+	// the data segment begins.
+	DataSegmentOffset = IndexSegmentSize
+)
+
 var (
 	// FirstPrefix is the very first prefix in the dataset. It is intended
 	// to be used as a parameter to Scan.
@@ -22,7 +34,7 @@ var (
 
 type (
 	OfflineDatabase struct {
-		index, data readCloserAt
+		database readCloserAt
 	}
 
 	// readCloserAt is an io.ReaderAt that can be Closed and whose
@@ -37,31 +49,24 @@ type (
 	}
 )
 
-func NewOfflineDatabase(idxFile, dataFile string) (*OfflineDatabase, error) {
+func NewOfflineDatabase(dbFile string) (*OfflineDatabase, error) {
 
-	idx, err := mmap.Open(idxFile)
+	db, err := mmap.Open(dbFile)
 	if err != nil {
 		return nil, fmt.Errorf("error opening index: %s", err)
 	}
 
-	data, err := mmap.Open(dataFile)
-	if err != nil {
-		return nil, fmt.Errorf("error opening data: %s", err)
+	odb := &OfflineDatabase{
+		database: db,
 	}
 
-	db := &OfflineDatabase{
-		index: idx,
-		data:  data,
-	}
-
-	return db, nil
+	return odb, nil
 
 }
 
 // Close frees resources associated with the database.
 func (od *OfflineDatabase) Close() error {
-	od.index.Close()
-	return od.data.Close()
+	return od.database.Close()
 }
 
 // Pwned checks whether the given hash is included in the Pwned Passwords database.
@@ -115,7 +120,7 @@ func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, cb func(hash [20
 		}
 
 		// read from the data file
-		if _, err := od.data.ReadAt(buffer[0:length], start); err != nil {
+		if _, err := od.database.ReadAt(buffer[0:length], DataSegmentOffset+start); err != nil {
 			return err
 		}
 
@@ -166,22 +171,22 @@ func (od *OfflineDatabase) lookup(start [3]byte) (location, length int64, err er
 	// If we're looking up 0x00FFFFFF there won't be a next one to check, so don't try.
 	case [3]byte{0xFF, 0xFF, 0xFF}:
 
-		// read the required index, and the next one (to calculate length)
+		// read the required index
 		var dataLocations [8]byte
-		if _, err := od.index.ReadAt(dataLocations[:], int64(prefixIndex)*8); err != nil {
-			return 0, 0, nil
+		if _, err := od.database.ReadAt(dataLocations[:], int64(prefixIndex)*8); err != nil {
+			return 0, 0, err
 		}
 
 		// look up locations and calculate length
 		loc = int64(binary.BigEndian.Uint64(dataLocations[0:8]))
-		dataLen = int64(od.data.Len()) - loc
+		dataLen = int64(od.database.Len()-IndexSegmentSize) - loc
 
 	default:
 
 		// read the required index, and the next one (to calculate length)
 		var dataLocations [16]byte
-		if _, err := od.index.ReadAt(dataLocations[:], int64(prefixIndex)*8); err != nil {
-			return 0, 0, nil
+		if _, err := od.database.ReadAt(dataLocations[:], int64(prefixIndex)*8); err != nil {
+			return 0, 0, err
 		}
 
 		// look up locations and calculate length

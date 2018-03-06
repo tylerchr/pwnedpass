@@ -3,30 +3,22 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"net/http"
-	_ "net/http/pprof"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 )
 
+// IndexSegmentSize is the exact size of the index segment in bytes.
+const IndexSegmentSize = 256 << 16 << 3 // exactly 256^3 MB
+
 func main() {
 
-	go http.ListenAndServe(":8888", nil)
-
-	// read from the input stream
-	rr, err := gzip.NewReader(os.Stdin)
-	if err != nil {
-		panic(err)
-	}
-	defer rr.Close()
-
 	// open data file
-	df, err := os.Create("pwned-passwords-data.bin")
+	df, err := os.Create("pwned-passwords.bin")
 	if err != nil {
 		panic(err)
 	}
@@ -42,7 +34,22 @@ func main() {
 	var dataPointer uint64
 	var currentHeader [3]byte
 
-	s := bufio.NewScanner(rr)
+	// open a stream of zeros
+	zero, err := os.Open("/dev/zero")
+	if err != nil {
+		panic(err)
+	}
+	defer zero.Close()
+
+	// write zeros in the index segment space
+	fmt.Println("Reserving space for the index segment...")
+	if _, err := io.CopyN(dff, zero, IndexSegmentSize); err != nil {
+		panic(err)
+	}
+
+	// write the data segment
+	fmt.Println("Writing data segment...")
+	s := bufio.NewScanner(os.Stdin)
 	for s.Scan() {
 
 		// read line, trimming right-hand whitespace
@@ -78,18 +85,24 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("Dumping header file: [%d bytes]\n", hdr.Len())
+	// make sure all data segment writes are through
+	dff.Flush()
 
-	// open header file
-	hf, err := os.Create("pwned-passwords-index.bin")
-	if err != nil {
+	// assert that the header data is the expected size (exactly 256^3 MB)
+	if hdr.Len() != IndexSegmentSize {
+		panic(fmt.Errorf("unexpected amount of header data: %d bytes", hdr.Len()))
+	}
+
+	// seek back to the beginning of the file
+	if _, err := df.Seek(0, io.SeekStart); err != nil {
 		panic(err)
 	}
-	defer hf.Close()
 
-	// dump header file
-	if _, err := hdr.WriteTo(hf); err != nil {
+	fmt.Println("Writing index segment...")
+	if _, err := io.Copy(dff, &hdr); err != nil {
 		panic(err)
 	}
+
+	fmt.Println("OK")
 
 }

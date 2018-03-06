@@ -5,11 +5,6 @@ import (
 	"testing"
 )
 
-const (
-	IndexFilename = "pwned-passwords-index.bin"
-	DataFilename  = "pwned-passwords-data.bin"
-)
-
 func TestOfflineDatabase_Pwned(t *testing.T) {
 
 	cases := []struct {
@@ -26,7 +21,7 @@ func TestOfflineDatabase_Pwned(t *testing.T) {
 		},
 	}
 
-	od, err := NewOfflineDatabase(IndexFilename, DataFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename)
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -45,7 +40,7 @@ func TestOfflineDatabase_Pwned(t *testing.T) {
 
 func BenchmarkOfflineDatabase_Pwned(b *testing.B) {
 
-	od, err := NewOfflineDatabase(IndexFilename, DataFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename)
 	if err != nil {
 		b.Fatalf("unexpected error: %s", err)
 	}
@@ -90,7 +85,7 @@ func TestOfflineDatabase_Scan(t *testing.T) {
 		},
 	}
 
-	od, err := NewOfflineDatabase(IndexFilename, DataFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename)
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -134,7 +129,7 @@ func TestOfflineDatabase_Lookup(t *testing.T) {
 		},
 	}
 
-	od, err := NewOfflineDatabase(IndexFilename, DataFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename)
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}

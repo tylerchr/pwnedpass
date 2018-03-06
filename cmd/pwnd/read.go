@@ -13,21 +13,15 @@ import (
 	"code.tylerchr.com/tylerchr/pwnedpass"
 )
 
-const (
-	IndexFilename = "pwned-passwords-index.bin"
-	DataFilename  = "pwned-passwords-data.bin"
-)
-
 func main() {
 
 	// parse flags
-	var idxFile, dataFile string
-	flag.StringVar(&idxFile, "index", IndexFilename, "path to the index file")
-	flag.StringVar(&dataFile, "data", DataFilename, "path to the data file")
+	var dbFile string
+	flag.StringVar(&dbFile, "database", pwnedpass.DatabaseFilename, "path to the database file")
 	flag.Parse()
 
 	// open the offline database
-	od, err := pwnedpass.NewOfflineDatabase(idxFile, dataFile)
+	od, err := pwnedpass.NewOfflineDatabase(dbFile)
 	if err != nil {
 		panic(err)
 	}
