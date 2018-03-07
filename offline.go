@@ -32,12 +32,6 @@ var (
 	// to be used as a parameter to Scan.
 	LastPrefix = [3]byte{0xFF, 0xFF, 0xFF}
 
-	// smallBufferPool is a pool of small buffer objects available for reuse.
-	smallBufferPool = &sync.Pool{New: func() interface{} {
-		var buf [16]byte
-		return &buf
-	}}
-
 	// bigBufferPool is a pool of large-ish buffer objects available for reuse.
 	bigBufferPool = &sync.Pool{New: func() interface{} {
 		return make([]byte, 8<<10)
@@ -172,11 +166,11 @@ func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, hash []byte, cb 
 func (od *OfflineDatabase) lookup(start [3]byte) (location, length int64, err error) {
 
 	// get a small buffer to reuse for various things here
-	buffer := smallBufferPool.Get().(*[16]byte)
+	var buffer [16]byte
 
 	// get location as integer
-	copy((*buffer)[1:4], start[:])
-	prefixIndex := binary.BigEndian.Uint32((*buffer)[0:4]) // number between 0x00000000 and 0x00FFFFFF
+	copy(buffer[1:4], start[:])
+	prefixIndex := binary.BigEndian.Uint32(buffer[0:4]) // number between 0x00000000 and 0x00FFFFFF
 
 	var loc, dataLen int64
 
@@ -186,24 +180,24 @@ func (od *OfflineDatabase) lookup(start [3]byte) (location, length int64, err er
 	case [3]byte{0xFF, 0xFF, 0xFF}:
 
 		// read the required index
-		if _, err := od.database.ReadAt((*buffer)[0:8], int64(prefixIndex)*8); err != nil {
+		if _, err := od.database.ReadAt(buffer[0:8], int64(prefixIndex)*8); err != nil {
 			return 0, 0, err
 		}
 
 		// look up locations and calculate length
-		loc = int64(binary.BigEndian.Uint64((*buffer)[0:8]))
+		loc = int64(binary.BigEndian.Uint64(buffer[0:8]))
 		dataLen = int64(od.database.Len()-IndexSegmentSize) - loc
 
 	default:
 
 		// read the required index, and the next one (to calculate length)
-		if _, err := od.database.ReadAt((*buffer)[0:16], int64(prefixIndex)*8); err != nil {
+		if _, err := od.database.ReadAt(buffer[0:16], int64(prefixIndex)*8); err != nil {
 			return 0, 0, err
 		}
 
 		// look up locations and calculate length
 		var nextLoc int64
-		loc, nextLoc = int64(binary.BigEndian.Uint64((*buffer)[0:8])), int64(binary.BigEndian.Uint64((*buffer)[8:16]))
+		loc, nextLoc = int64(binary.BigEndian.Uint64(buffer[0:8])), int64(binary.BigEndian.Uint64(buffer[8:16]))
 		dataLen = nextLoc - loc
 
 	}
