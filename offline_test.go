@@ -45,9 +45,13 @@ func BenchmarkOfflineDatabase_Pwned(b *testing.B) {
 		b.Fatalf("unexpected error: %s", err)
 	}
 
+	hash := sha1.Sum([]byte("P@ssword"))
+
+	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 
-		if _, err := od.Pwned(sha1.Sum([]byte("P@ssword"))); err != nil {
+		if _, err := od.Pwned(hash); err != nil {
 			b.Fatalf("[case %d] unexpected error: %s", i, err)
 		}
 

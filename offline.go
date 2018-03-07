@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 
 	"golang.org/x/exp/mmap"
 )
@@ -30,6 +31,17 @@ var (
 	// LastPrefix is the very last prefix in the dataset. It is intended
 	// to be used as a parameter to Scan.
 	LastPrefix = [3]byte{0xFF, 0xFF, 0xFF}
+
+	// smallBufferPool is a pool of small buffer objects available for reuse.
+	smallBufferPool = &sync.Pool{New: func() interface{} {
+		var buf [16]byte
+		return &buf
+	}}
+
+	// bigBufferPool is a pool of large-ish buffer objects available for reuse.
+	bigBufferPool = &sync.Pool{New: func() interface{} {
+		return make([]byte, 8<<10)
+	}}
 )
 
 type (
@@ -75,7 +87,8 @@ func (od *OfflineDatabase) Pwned(hash [20]byte) (frequency int, err error) {
 	var prefix [3]byte
 	copy(prefix[0:3], hash[0:3])
 
-	err = od.Scan(prefix, prefix, func(pwnedHash [20]byte, freq uint16) bool {
+	var pwnedHash [20]byte
+	err = od.Scan(prefix, prefix, pwnedHash[:], func(freq int64) bool {
 		if pwnedHash == hash {
 			frequency = int(freq)
 			return true
@@ -94,20 +107,19 @@ func (od *OfflineDatabase) Pwned(hash [20]byte) (frequency int, err error) {
 //     1) the last hash with a prefix of endPrefix has been reached,
 //     2) the callback returns "true" to indicate a stop is requested,
 //  or 3) the end of the hash database is reached.
-func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, cb func(hash [20]byte, frequency uint16) bool) error {
+func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, hash []byte, cb func(frequency int64) bool) error {
 
 	if bytes.Compare(startPrefix[:], endPrefix[:]) == 1 {
 		return errors.New("invalid range: startPrefix > endPrefix")
 	}
 
-	buffer := make([]byte, 8<<10) // 8KB buffer
+	buffer := bigBufferPool.Get().([]byte)
 
 	var shortPrefix [3]byte = startPrefix
 	var fullPrefix [4]byte
 	copy(fullPrefix[1:4], startPrefix[0:3])
 
-	var foundHash [20]byte
-	copy(foundHash[0:3], startPrefix[0:3])
+	copy(hash[0:3], startPrefix[0:3])
 
 	var currentPrefix uint32 = binary.BigEndian.Uint32(fullPrefix[:])
 
@@ -126,10 +138,10 @@ func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, cb func(hash [20
 
 		for offset := int64(0); offset < length; offset += 19 {
 
-			copy(foundHash[3:20], buffer[offset:offset+17])
-			frequency := binary.BigEndian.Uint16(buffer[offset+17 : offset+19])
+			copy(hash[3:20], buffer[offset:offset+17])
+			frequency := int64(binary.BigEndian.Uint16(buffer[offset+17 : offset+19]))
 
-			if stop := cb(foundHash, frequency); stop {
+			if stop := cb(frequency); stop {
 				return nil
 			}
 
@@ -144,7 +156,7 @@ func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, cb func(hash [20
 		currentPrefix++
 		binary.BigEndian.PutUint32(fullPrefix[0:4], currentPrefix)
 		copy(shortPrefix[0:3], fullPrefix[1:4])
-		copy(foundHash[0:3], fullPrefix[1:4])
+		copy(hash[0:3], fullPrefix[1:4])
 
 		// stop if we're reaching beyond the end
 		if currentPrefix > 256<<16 {
@@ -159,10 +171,12 @@ func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, cb func(hash [20
 // lookup returns the location of a block of data in the index
 func (od *OfflineDatabase) lookup(start [3]byte) (location, length int64, err error) {
 
+	// get a small buffer to reuse for various things here
+	buffer := smallBufferPool.Get().(*[16]byte)
+
 	// get location as integer
-	var longPrefix [4]byte
-	copy(longPrefix[1:4], start[:])
-	prefixIndex := binary.BigEndian.Uint32(longPrefix[:]) // number between 0x00000000 and 0x00FFFFFF
+	copy((*buffer)[1:4], start[:])
+	prefixIndex := binary.BigEndian.Uint32((*buffer)[0:4]) // number between 0x00000000 and 0x00FFFFFF
 
 	var loc, dataLen int64
 
@@ -172,26 +186,24 @@ func (od *OfflineDatabase) lookup(start [3]byte) (location, length int64, err er
 	case [3]byte{0xFF, 0xFF, 0xFF}:
 
 		// read the required index
-		var dataLocations [8]byte
-		if _, err := od.database.ReadAt(dataLocations[:], int64(prefixIndex)*8); err != nil {
+		if _, err := od.database.ReadAt((*buffer)[0:8], int64(prefixIndex)*8); err != nil {
 			return 0, 0, err
 		}
 
 		// look up locations and calculate length
-		loc = int64(binary.BigEndian.Uint64(dataLocations[0:8]))
+		loc = int64(binary.BigEndian.Uint64((*buffer)[0:8]))
 		dataLen = int64(od.database.Len()-IndexSegmentSize) - loc
 
 	default:
 
 		// read the required index, and the next one (to calculate length)
-		var dataLocations [16]byte
-		if _, err := od.database.ReadAt(dataLocations[:], int64(prefixIndex)*8); err != nil {
+		if _, err := od.database.ReadAt((*buffer)[0:16], int64(prefixIndex)*8); err != nil {
 			return 0, 0, err
 		}
 
 		// look up locations and calculate length
 		var nextLoc int64
-		loc, nextLoc = int64(binary.BigEndian.Uint64(dataLocations[0:8])), int64(binary.BigEndian.Uint64(dataLocations[8:16]))
+		loc, nextLoc = int64(binary.BigEndian.Uint64((*buffer)[0:8])), int64(binary.BigEndian.Uint64((*buffer)[8:16]))
 		dataLen = nextLoc - loc
 
 	}

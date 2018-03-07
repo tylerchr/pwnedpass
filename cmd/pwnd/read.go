@@ -1,17 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"flag"
 	"fmt"
 	"net/http"
-	_ "net/http/pprof"
-	"strings"
-	"time"
+	"net/http/pprof"
+	"strconv"
 
 	"code.tylerchr.com/tylerchr/pwnedpass"
 )
+
+// caphextable is used to hex-encode a string using capital letters. It's a
+// slight variation to the strategy used by the stdlib's hex.Encode.
+const caphextable = "0123456789ABCDEF"
 
 func main() {
 
@@ -27,14 +31,22 @@ func main() {
 	}
 	defer od.Close()
 
-	// mount pwnedpassword endpoint
-	http.Handle("/pwnedpassword/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.ListenAndServe(":8889", BuildHandler(od))
 
-		t0 := time.Now()
-		defer func() { fmt.Printf("[%s] Responded in %s\n", r.URL, time.Since(t0)) }()
+}
+
+func BuildHandler(od *pwnedpass.OfflineDatabase) http.Handler {
+
+	mux := http.NewServeMux()
+
+	// mount pprof routes¡
+	mux.Handle("/debug/pprof/", http.HandlerFunc(pprof.Index))
+
+	// mount pwnedpassword endpoint
+	mux.Handle("/pwnedpassword/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// get password
-		pw := strings.TrimPrefix(r.URL.Path, "/pwnedpassword/")
+		pw := bytes.TrimPrefix([]byte(r.URL.Path), []byte("/pwnedpassword/"))
 
 		var hash [20]byte
 		if hh, ok := isHash(pw); ok {
@@ -65,14 +77,12 @@ func main() {
 	}))
 
 	// mount range endpoint
-	http.Handle("/range/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		t0 := time.Now()
-		defer func() { fmt.Printf("[%s] Responded in %s\n", r.URL, time.Since(t0)) }()
+	mux.Handle("/range/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// get password
-		prefix := strings.TrimPrefix(r.URL.Path, "/range/")
+		prefix := bytes.TrimPrefix([]byte(r.URL.Path), []byte("/range/"))
 
+		// validate hash
 		if !isHashPrefix(prefix) {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("The hash prefix was not in a valid format"))
@@ -81,26 +91,42 @@ func main() {
 
 		// produce the scan bounds
 		var start, end [3]byte
-		ss, _ := hex.DecodeString(prefix + "0")
-		ee, _ := hex.DecodeString(prefix + "F")
-		copy(start[:], ss)
-		copy(end[:], ee)
+		hex.Decode(start[:], append(prefix, byte('0')))
+		hex.Decode(end[:], append(prefix, byte('F')))
 
 		// perform the scan
-		od.Scan(start, end, func(hash [20]byte, freq uint16) bool {
-			fmt.Fprintf(w, "%s:%d\r\n", strings.TrimPrefix(strings.ToUpper(hex.EncodeToString(hash[:])), prefix), freq)
+		var hash [20]byte
+		var hexhash [40]byte
+		var buffer [64]byte
+		response := bytes.NewBuffer(buffer[:])
+		od.Scan(start, end, hash[:], func(freq int64) bool {
+
+			// convert to capital hex bytes
+			for i, v := range hash[:] {
+				hexhash[i*2] = caphextable[v>>4]
+				hexhash[i*2+1] = caphextable[v&0x0f]
+			}
+
+			response.Truncate(0)
+			response.Write(hexhash[5:])
+			response.Write([]byte{':'})
+			response.WriteString(strconv.FormatInt(freq, 10))
+			response.Write([]byte{'\r', '\n'})
+			w.Write(response.Bytes())
+
 			return false
+
 		})
 
 	}))
 
-	http.ListenAndServe(":8889", nil)
+	return mux
 
 }
 
 // isHash indicates whether the given input is already a hash value,
 // and returns it if so.
-func isHash(s string) (hash [20]byte, ok bool) {
+func isHash(s []byte) (hash [20]byte, ok bool) {
 
 	// not a hash if it's not the right length
 	if len(s) != 40 {
@@ -108,13 +134,12 @@ func isHash(s string) (hash [20]byte, ok bool) {
 		return
 	}
 
-	ss, err := hex.DecodeString(s)
-	if err != nil {
+	// decode the hex bytes
+	if _, err := hex.Decode(hash[:], s); err != nil {
 		ok = false
 		return
 	}
 
-	copy(hash[:], ss)
 	ok = true
 	return
 
@@ -122,20 +147,20 @@ func isHash(s string) (hash [20]byte, ok bool) {
 
 // isHashPrefix indicates whether s is a valid 5-character hex-encoded
 // prefix suitable for use as the parameter to a range request.
-func isHashPrefix(s string) bool {
+func isHashPrefix(s []byte) bool {
 
 	// not a hash prefix if it's not the right length
 	if len(s) != 5 {
-		fmt.Printf("not the right length: %d\n", len(s))
+		// fmt.Printf("not the right length: %d\n", len(s))
 		return false
 	}
 
-	for _, c := range []byte(s) {
+	for _, c := range s {
 		isUpper := c >= 'A' && c <= 'Z'
 		isLower := c >= 'a' && c <= 'z'
 		isNum := c >= '0' && c <= '9'
 		if !(isUpper || isLower || isNum) {
-			fmt.Printf("illegal character: %x (%c) (%t %t %t)\n", c, c, isUpper, isLower, isNum)
+			// fmt.Printf("illegal character: %x (%c) (%t %t %t)\n", c, c, isUpper, isLower, isNum)
 			return false
 		}
 	}
