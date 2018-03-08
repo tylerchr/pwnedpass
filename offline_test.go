@@ -98,7 +98,8 @@ func TestOfflineDatabase_Scan(t *testing.T) {
 
 		var count int
 
-		err = od.Scan(c.StartPrefix, c.EndPrefix, func(hash [20]byte, freq uint16) bool {
+		var hash [20]byte
+		err = od.Scan(c.StartPrefix, c.EndPrefix, hash[:], func(freq uint16) bool {
 			count++
 			return false
 		})

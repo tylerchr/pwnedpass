@@ -57,8 +57,6 @@ func BuildHandler(od *pwnedpass.OfflineDatabase) http.Handler {
 			hash = sha1.Sum([]byte(pw))
 		}
 
-		w.Header().Set("X-Password-SHA1", hex.EncodeToString(hash[:]))
-
 		frequency, err := od.Pwned(hash)
 		if err != nil {
 			fmt.Printf("unexpected error: %s\n", err)
@@ -89,15 +87,16 @@ func BuildHandler(od *pwnedpass.OfflineDatabase) http.Handler {
 			return
 		}
 
-		// produce the scan bounds
-		var start, end [3]byte
+		var hash [20]byte      // the binary-encoded SHA1 hash
+		var hexhash [40]byte   // the hex-encoded SHA1 hash
+		var buffer [64]byte    // small buffer for use in formatting response lines
+		var start, end [3]byte // scan boundaries
+
+		// calculate the scan boundaries
 		hex.Decode(start[:], append(prefix, byte('0')))
 		hex.Decode(end[:], append(prefix, byte('F')))
 
 		// perform the scan
-		var hash [20]byte
-		var hexhash [40]byte
-		var buffer [64]byte
 		response := bytes.NewBuffer(buffer[:])
 		od.Scan(start, end, hash[:], func(freq int64) bool {
 

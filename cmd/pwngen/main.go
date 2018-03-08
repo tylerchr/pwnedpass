@@ -15,10 +15,20 @@ import (
 // IndexSegmentSize is the exact size of the index segment in bytes.
 const IndexSegmentSize = 256 << 16 << 3 // exactly 256^3 MB
 
+// DatabaseFilename indicates the default location of the database file
+// to be created.
+var DatabaseFilename = "pwned-passwords.bin"
+
 func main() {
 
+	// choose a database filename
+	dbFile := DatabaseFilename
+	if len(os.Args) > 1 {
+		dbFile = os.Args[1]
+	}
+
 	// open data file
-	df, err := os.Create("pwned-passwords.bin")
+	df, err := os.Create(dbFile)
 	if err != nil {
 		panic(err)
 	}

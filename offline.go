@@ -32,13 +32,14 @@ var (
 	// to be used as a parameter to Scan.
 	LastPrefix = [3]byte{0xFF, 0xFF, 0xFF}
 
-	// bigBufferPool is a pool of large-ish buffer objects available for reuse.
-	bigBufferPool = &sync.Pool{New: func() interface{} {
+	// bufferPool is a pool of large-ish buffer objects available for reuse.
+	bufferPool = &sync.Pool{New: func() interface{} {
 		return make([]byte, 8<<10)
 	}}
 )
 
 type (
+	// An OfflineDatabase is a client for querying Pwned Passwords locally.
 	OfflineDatabase struct {
 		database readCloserAt
 	}
@@ -55,6 +56,8 @@ type (
 	}
 )
 
+// NewOfflineDatabase opens a new OfflineDatabase using the data in the given
+// database file.
 func NewOfflineDatabase(dbFile string) (*OfflineDatabase, error) {
 
 	db, err := mmap.Open(dbFile)
@@ -75,14 +78,18 @@ func (od *OfflineDatabase) Close() error {
 	return od.database.Close()
 }
 
-// Pwned checks whether the given hash is included in the Pwned Passwords database.
+// Pwned checks how frequently the given hash is included in the Pwned Passwords
+// database.
+//
+// Pwned will only return an error in the case of an invalid database file. Hashes
+// that are not found in the database will return a frequency of 0 and a nil error.
 func (od *OfflineDatabase) Pwned(hash [20]byte) (frequency int, err error) {
 
 	var prefix [3]byte
 	copy(prefix[0:3], hash[0:3])
 
 	var pwnedHash [20]byte
-	err = od.Scan(prefix, prefix, pwnedHash[:], func(freq int64) bool {
+	err = od.Scan(prefix, prefix, pwnedHash[:], func(freq uint16) bool {
 		if pwnedHash == hash {
 			frequency = int(freq)
 			return true
@@ -101,13 +108,18 @@ func (od *OfflineDatabase) Pwned(hash [20]byte) (frequency int, err error) {
 //     1) the last hash with a prefix of endPrefix has been reached,
 //     2) the callback returns "true" to indicate a stop is requested,
 //  or 3) the end of the hash database is reached.
-func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, hash []byte, cb func(frequency int64) bool) error {
+//
+// The binary-encoded hash is written into the hash slice argument, which must be
+// at least 20 bytes long (providing a smaller slice will result in a panic).
+//
+// Pwned will only return an error in the case of an invalid database file.
+func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, hash []byte, cb func(frequency uint16) bool) error {
 
 	if bytes.Compare(startPrefix[:], endPrefix[:]) == 1 {
 		return errors.New("invalid range: startPrefix > endPrefix")
 	}
 
-	buffer := bigBufferPool.Get().([]byte)
+	buffer := bufferPool.Get().([]byte)
 
 	var shortPrefix [3]byte = startPrefix
 	var fullPrefix [4]byte
@@ -130,10 +142,11 @@ func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, hash []byte, cb 
 			return err
 		}
 
+		// decode a hash+freq pair, and invoke the callback
 		for offset := int64(0); offset < length; offset += 19 {
 
 			copy(hash[3:20], buffer[offset:offset+17])
-			frequency := int64(binary.BigEndian.Uint16(buffer[offset+17 : offset+19]))
+			frequency := uint16(binary.BigEndian.Uint16(buffer[offset+17 : offset+19]))
 
 			if stop := cb(frequency); stop {
 				return nil
@@ -162,7 +175,7 @@ func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, hash []byte, cb 
 	return nil
 }
 
-// lookup returns the location of a block of data in the index
+// lookup returns the location of a block of data in the index.
 func (od *OfflineDatabase) lookup(start [3]byte) (location, length int64, err error) {
 
 	// get a small buffer to reuse for various things here
