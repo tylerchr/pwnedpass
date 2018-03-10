@@ -2,10 +2,15 @@ package pwnedpass
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 
 	"golang.org/x/exp/mmap"
@@ -21,6 +26,10 @@ const (
 	// DataSegmentOffset indicates the byte offset in the database where
 	// the data segment begins.
 	DataSegmentOffset = IndexSegmentSize
+
+	// caphextable is used to hex-encode a string using capital letters. It's a
+	// slight variation to the strategy used by the stdlib's hex.Encode.
+	caphextable = "0123456789ABCDEF"
 )
 
 var (
@@ -216,5 +225,141 @@ func (od *OfflineDatabase) lookup(start [3]byte) (location, length int64, err er
 	}
 
 	return loc, dataLen, nil
+
+}
+
+// ServeHTTP implements the http.Handler interface by approximating the online
+// Pwned Password V2 API. The following routes are available:
+//
+//     /pwnedpassword/password
+//     /pwnedpassword/hash
+//     /range/ABCDE
+//
+// Their behavior is very similar to that of the online equivalent; the same
+// documentation should apply.
+func (od *OfflineDatabase) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+	switch {
+
+	case strings.HasPrefix(r.URL.Path, "/pwnedpassword/"):
+
+		// get password
+		pw := bytes.TrimPrefix([]byte(r.URL.Path), []byte("/pwnedpassword/"))
+
+		var hash [20]byte
+		if hh, ok := isHash(pw); ok {
+			// already a hash, just use it
+			hash = hh
+		} else {
+			// not a hash, hash it now
+			hash = sha1.Sum([]byte(pw))
+		}
+
+		frequency, err := od.Pwned(hash)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		if frequency == 0 {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprintln(w, "Password not compromised")
+		} else {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, frequency)
+		}
+
+	case strings.HasPrefix(r.URL.Path, "/range/"):
+
+		// get password
+		prefix := bytes.TrimPrefix([]byte(r.URL.Path), []byte("/range/"))
+
+		// validate hash
+		if !isHashPrefix(prefix) {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("The hash prefix was not in a valid format"))
+			return
+		}
+
+		var hash [20]byte      // the binary-encoded SHA1 hash
+		var hexhash [40]byte   // the hex-encoded SHA1 hash
+		var buffer [64]byte    // small buffer for use in formatting response lines
+		var start, end [3]byte // scan boundaries
+
+		// calculate the scan boundaries
+		hex.Decode(start[:], append(prefix, byte('0')))
+		hex.Decode(end[:], append(prefix, byte('F')))
+
+		// perform the scan
+		response := bytes.NewBuffer(buffer[:])
+		od.Scan(start, end, hash[:], func(freq uint16) bool {
+
+			// convert to capital hex bytes
+			for i, v := range hash[:] {
+				hexhash[i*2] = caphextable[v>>4]
+				hexhash[i*2+1] = caphextable[v&0x0f]
+			}
+
+			response.Truncate(0)
+			response.Write(hexhash[5:])
+			response.Write([]byte{':'})
+			response.WriteString(strconv.FormatInt(int64(freq), 10))
+			response.Write([]byte{'\r', '\n'})
+			w.Write(response.Bytes())
+
+			return false
+
+		})
+
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		return
+
+	}
+
+}
+
+// isHash indicates whether the given input is already a hash value,
+// and returns it if so.
+func isHash(s []byte) (hash [20]byte, ok bool) {
+
+	// not a hash if it's not the right length
+	if len(s) != 40 {
+		ok = false
+		return
+	}
+
+	// decode the hex bytes
+	if _, err := hex.Decode(hash[:], s); err != nil {
+		ok = false
+		return
+	}
+
+	ok = true
+	return
+
+}
+
+// isHashPrefix indicates whether s is a valid 5-character hex-encoded
+// prefix suitable for use as the parameter to a range request.
+func isHashPrefix(s []byte) bool {
+
+	// not a hash prefix if it's not the right length
+	if len(s) != 5 {
+		// fmt.Printf("not the right length: %d\n", len(s))
+		return false
+	}
+
+	for _, c := range s {
+		isUpper := c >= 'A' && c <= 'Z'
+		isLower := c >= 'a' && c <= 'z'
+		isNum := c >= '0' && c <= '9'
+		if !(isUpper || isLower || isNum) {
+			// fmt.Printf("illegal character: %x (%c) (%t %t %t)\n", c, c, isUpper, isLower, isNum)
+			return false
+		}
+	}
+
+	return true
 
 }

@@ -1,8 +1,8 @@
-# Package `pwnedpass` [![GoDoc](https://godoc.org/github.com/tylerchr/pwnedpass?status.svg)](https://godoc.org/github.com/tylerchr/pwnedpass)
+# `pwnedpass` [![GoDoc](https://godoc.org/github.com/tylerchr/pwnedpass?status.svg)](https://godoc.org/github.com/tylerchr/pwnedpass)
 
-Package `pwnedpass` is a Go package for querying a local instance of Troy Hunt's Pwned Passwords database.
+Package `pwnedpass` is a Go package for querying a local instance of Troy Hunt's Pwned Passwords database. It also implements an http.Handler that reproduces the online Pwned Passwords HTTP API.
 
-For an HTTP API built on top of this package, see sub-package [pwnd](https://github.com/tylerchr/pwnedpass/tree/master/cmd/pwnd).
+For a complete HTTP server built on top of this package, see sub-package [pwnd](https://github.com/tylerchr/pwnedpass/tree/master/cmd/pwnd).
 
 ## Usage
 

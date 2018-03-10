@@ -2,10 +2,14 @@ package pwnedpass
 
 import (
 	"crypto/sha1"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
-func TestOfflineDatabase_Pwned(t *testing.T) {
+func TestPwned(t *testing.T) {
 
 	cases := []struct {
 		Password  string
@@ -38,7 +42,7 @@ func TestOfflineDatabase_Pwned(t *testing.T) {
 
 }
 
-func BenchmarkOfflineDatabase_Pwned(b *testing.B) {
+func BenchmarkPwned(b *testing.B) {
 
 	od, err := NewOfflineDatabase(DatabaseFilename)
 	if err != nil {
@@ -59,7 +63,7 @@ func BenchmarkOfflineDatabase_Pwned(b *testing.B) {
 
 }
 
-func TestOfflineDatabase_Scan(t *testing.T) {
+func TestScan(t *testing.T) {
 
 	cases := []struct {
 		StartPrefix, EndPrefix [3]byte
@@ -97,8 +101,8 @@ func TestOfflineDatabase_Scan(t *testing.T) {
 	for i, c := range cases {
 
 		var count int
-
 		var hash [20]byte
+
 		err = od.Scan(c.StartPrefix, c.EndPrefix, hash[:], func(freq uint16) bool {
 			count++
 			return false
@@ -116,7 +120,48 @@ func TestOfflineDatabase_Scan(t *testing.T) {
 
 }
 
-func TestOfflineDatabase_Lookup(t *testing.T) {
+func BenchmarkScan(b *testing.B) {
+
+	var (
+		StartPrefix = [3]byte{0x05, 0x31, 0x91}
+		EndPrefix   = [3]byte{0x05, 0x31, 0x91}
+	)
+
+	od, err := NewOfflineDatabase(DatabaseFilename)
+	if err != nil {
+		b.Fatalf("unexpected error: %s", err)
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+
+		var count, frequency int
+		var hash [20]byte
+
+		err := od.Scan(StartPrefix, EndPrefix, hash[:], func(freq uint16) bool {
+			count++
+			frequency += int(freq)
+			return false
+		})
+
+		if err != nil {
+			b.Fatalf("[case %d] unexpected error: %s", i, err)
+		}
+
+		if expected := 43; count != expected {
+			b.Errorf("[case %d] unexpected hash count: expected '%d' but got '%d'", i, expected, count)
+		}
+
+		if expected := 146; frequency != expected {
+			b.Errorf("[case %d] unexpected total leaks: expected '%d' but got '%d'", i, expected, frequency)
+		}
+
+	}
+
+}
+
+func TestLookup(t *testing.T) {
 
 	cases := []struct {
 		Start            [3]byte
@@ -153,6 +198,78 @@ func TestOfflineDatabase_Lookup(t *testing.T) {
 		if length != c.Length {
 			t.Errorf("[case %d] unexpected length: expected [%d bytes] but got [%d bytes]\n", i, c.Length, length)
 		}
+
+	}
+
+}
+
+func BenchmarkHTTPPassword(b *testing.B) {
+
+	// open the offline database
+	od, err := NewOfflineDatabase(DatabaseFilename)
+	if err != nil {
+		panic(err)
+	}
+	defer od.Close()
+
+	// start a dummy HTTP server
+	s := httptest.NewServer(od)
+	defer s.Close()
+
+	// run a benchmark
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+
+		req, _ := http.NewRequest("GET", s.URL+"/pwnedpassword/P@ssword", nil)
+
+		resp, err := s.Client().Do(req)
+		if err != nil {
+			b.Fatalf("unexpected error: %s\n", err)
+		}
+
+		if n, err := io.Copy(ioutil.Discard, resp.Body); err != nil {
+			b.Fatalf("unexpected error: %s\n", err)
+		} else if n != 5 {
+			b.Fatalf("unexpected response length: %d\n", n)
+		}
+
+		resp.Body.Close()
+
+	}
+
+}
+
+func BenchmarkHTTPRange(b *testing.B) {
+
+	// open the offline database
+	od, err := NewOfflineDatabase(DatabaseFilename)
+	if err != nil {
+		panic(err)
+	}
+	defer od.Close()
+
+	// start a dummy HTTP server
+	s := httptest.NewServer(od)
+	defer s.Close()
+
+	// run a benchmark
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+
+		req, _ := http.NewRequest("GET", s.URL+"/range/abcde", nil)
+
+		resp, err := s.Client().Do(req)
+		if err != nil {
+			b.Fatalf("unexpected error: %s\n", err)
+		}
+
+		if n, err := io.Copy(ioutil.Discard, resp.Body); err != nil {
+			b.Fatalf("unexpected error: %s\n", err)
+		} else if n != 19957 {
+			b.Fatalf("unexpected response length: %d\n", n)
+		}
+
+		resp.Body.Close()
 
 	}
 
