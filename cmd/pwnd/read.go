@@ -4,7 +4,7 @@ import (
 	"flag"
 	"net/http"
 
-	"code.tylerchr.com/tylerchr/pwnedpass"
+	"github.com/tylerchr/pwnedpass"
 )
 
 func main() {
