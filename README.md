@@ -65,18 +65,19 @@ The file format is extremely simple and is documented below. Additionally, this 
 
 ```bash
 $ go install github.com/tylerchr/pwnedpass/cmd/pwngen
-$ 7z e -so ./pwned-passwords-2.0.txt.7z pwned-passwords-ordered-2.0.txt | pwngen pwned-passwords.bin
+$ 7z e -so pwned-passwords-ordered-by-hash.7z pwned-passwords-ordered-by-hash.txt | pwngen pwned-passwords.bin
 Reserving space for the index segment...
 Writing data segment...
 Writing index segment...
 OK
 ```
 
-This process takes approximately 21:30 on my 2012 iMac, and results in a 9GB `pwned-passwords.bin` file. Note that you must use the _ordered_ database file for correct results here.
+This process takes approximately 18m15s on my 2013 iMac, and results in a 9.3GB `pwned-passwords.bin` file. Note that you must use the _ordered by hash_ database file for correct results here.
 
 | File                        | SHA-1 of stock 7-Zip file                | SHA-1 of binary file                     |
 | --------------------------- | ---------------------------------------- | ---------------------------------------- |
 | Version 2 (ordered by hash) | 87437926c6293d034a259a2b86a2d077e7fd5a63 | 9ea32216da1ab11ac2c9a29e19c33f1c2e6ecd1a |
+| Version 3 (ordered by hash) | 10c001292d52a04dc0fb58a7fb7dd0b6ea7f7212 | 2b2117287cfed6771f1e217cc57b05d8bd0196d4 |
 
 ### File Format
 
@@ -102,15 +103,15 @@ The data segment contains each hash in sorted order, paired with a 16-bit big-en
                                       2 bytes                                    2 bytes
 ```
 
-This sequence repeats for all hashes in the dataset, which as of this moment is 501,636,842. The observant reader might notice at this point that all these numbers line up:
+This sequence repeats for all hashes in the dataset, which in the Version 3 export is 517,238,891. The observant reader might notice at this point that all these numbers line up:
 
 ```
 $ ls -la pwned-passwords.bin
--rw-r--r--   1 tylerchr  staff   9665317726 Mar  8 16:56 pwned-passwords.bin
+-rw-r--r--   1 tylerchr  staff   9961756657 Nov 30 20:34 pwned-passwords.bin
 
-# (256^3 * 8) + (501,636,842 * (17 + 2)) = 9665317726 bytes
-# (256^3 * 8) + (501,636,842 * 19        = 9665317726 bytes
-# 134,217,728 + 9,531,099,998            = 9665317726 bytes
+# (256^3 * 8) + (517,238,891 * (17 + 2)) = 9961756657 bytes
+# (256^3 * 8) + (517,238,891 * 19)       = 9961756657 bytes
+# 134,217,728 + 9,827,538,929            = 9961756657 bytes
 ```
 
 For more details on the design choices of this file format, see [the associated blog post]().
