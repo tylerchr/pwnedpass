@@ -121,7 +121,7 @@ func (od *OfflineDatabase) Pwned(hash [20]byte) (frequency int, err error) {
 // The binary-encoded hash is written into the hash slice argument, which must be
 // at least 20 bytes long (providing a smaller slice will result in a panic).
 //
-// Pwned will only return an error in the case of an invalid database file.
+// Scan will only return an error in the case of an invalid database file.
 func (od *OfflineDatabase) Scan(startPrefix, endPrefix [3]byte, hash []byte, cb func(frequency uint16) bool) error {
 
 	if bytes.Compare(startPrefix[:], endPrefix[:]) == 1 {
