@@ -115,4 +115,4 @@ $ ls -la pwned-passwords.bin
 # 134,217,728 + 10,478,685,573           = 10612903301 bytes
 ```
 
-For more details on the design choices of this file format, see [the associated blog post]().
+For more details on the design choices of this file format, see [the associated blog post](https://github.com/tylerchr/pwnedpass/blob/master/DETAILS.md).
