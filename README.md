@@ -65,20 +65,21 @@ The file format is extremely simple and is documented below. Additionally, this 
 
 ```bash
 $ go install github.com/tylerchr/pwnedpass/cmd/pwngen
-$ 7z e -so pwned-passwords-sha1-ordered-by-hash-v4.7z pwned-passwords-sha1-ordered-by-hash-v4.txt | pwngen pwned-passwords.bin
+$ 7z e -so pwned-passwords-sha1-ordered-by-hash-v5.7z pwned-passwords-sha1-ordered-by-hash-v5.txt | pwngen pwned-passwords.bin
 Reserving space for the index segment...
 Writing data segment...
 Writing index segment...
 OK
 ```
 
-This process takes approximately 19m50s on my 2013 iMac, and results in a 9.9GB `pwned-passwords.bin` file. Note that you must use the _ordered by hash_ database file for correct results here.
+This process takes approximately 19m18s on my 2013 iMac, and results in a 9.95GiB `pwned-passwords.bin` file. Note that you must use the _ordered by hash_ database file for correct results here.
 
 | File                        | SHA-1 of stock 7-Zip file                | SHA-1 of binary file                     |
 | --------------------------- | ---------------------------------------- | ---------------------------------------- |
 | Version 2 (ordered by hash) | 87437926c6293d034a259a2b86a2d077e7fd5a63 | 9ea32216da1ab11ac2c9a29e19c33f1c2e6ecd1a |
 | Version 3 (ordered by hash) | 10c001292d52a04dc0fb58a7fb7dd0b6ea7f7212 | 2b2117287cfed6771f1e217cc57b05d8bd0196d4 |
 | Version 4 (ordered by hash) | d81c649cda9cddb398f2b93c629718e14b7f2686 | 70758c9557a138664cc4a99759f219a2bc49da49 |
+| Version 5 (ordered by hash) | 4f505d687a7dd3d67980983787adb33cb768c7b2 | 1282ad6cff4c03613d5c99d47a11dda354898494 |
 
 ### File Format
 
@@ -104,15 +105,15 @@ The data segment contains each hash in sorted order, paired with a 16-bit big-en
                                       2 bytes                                    2 bytes
 ```
 
-This sequence repeats for all hashes in the dataset, which in the Version 4 export is 551,509,767. The observant reader might notice at this point that all these numbers line up:
+This sequence repeats for all hashes in the dataset, which in the Version 5 export is 555,278,657. The observant reader might notice at this point that all these numbers line up:
 
 ```
 $ ls -la pwned-passwords.bin
--rw-r--r--   1 tylerchr  staff  10612903301 Jan 17 00:02 pwned-passwords.bin
+-rw-r--r--   1 tylerchr  staff  10684512211 Mar  3 10:08 pwned-passwords.bin
 
-# (256^3 * 8) + (551,509,767 * (17 + 2)) = 10612903301 bytes
-# (256^3 * 8) + (551,509,767 * 19)       = 10612903301 bytes
-# 134,217,728 + 10,478,685,573           = 10612903301 bytes
+# (256^3 * 8) + (555,278,657 * (17 + 2)) = 10684512211 bytes
+# (256^3 * 8) + (555,278,657 * 19)       = 10684512211 bytes
+# 134,217,728 + 10,550,294,483           = 10684512211 bytes
 ```
 
 For more details on the design choices of this file format, see [the associated blog post](https://github.com/tylerchr/pwnedpass/blob/master/DETAILS.md).
