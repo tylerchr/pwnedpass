@@ -11,7 +11,7 @@ The `pwnedpass` package exports two primary functions, `Pwned` and `Scan`, which
 Querying a local Pwned Passwords database requires a local copy of the Pwned Passwords database; see "Database File" below for details on how to generate this.
 
 ```go
-od, _ := pwnedpass.NewOfflineDatabase("pwned-passwords-v7.bin") // see "Database File" below
+od, _ := pwnedpass.NewOfflineDatabase("pwned-passwords-v8.bin") // see "Database File" below
 ```
 
 ### Pwned Password
@@ -65,14 +65,14 @@ The file format is extremely simple and is documented below. Additionally, this 
 
 ```bash
 $ go install github.com/tylerchr/pwnedpass/cmd/pwngen
-$ 7z e -so pwned-passwords-sha1-ordered-by-hash-v7.7z pwned-passwords-sha1-ordered-by-hash-v7.txt | pwngen pwned-passwords-v7.bin
+$ 7z e -so pwned-passwords-sha1-ordered-by-hash-v8.7z pwned-passwords-sha1-ordered-by-hash-v8.txt | pwngen pwned-passwords-v8.bin
 Reserving space for the index segment...
 Writing data segment...
 Writing index segment...
 OK
 ```
 
-This process takes approximately 13m57s on my 2021 MacBook Pro, and results in a 10.98GiB `pwned-passwords-v7.bin` file. Note that you must use the _ordered by hash_ database file for correct results here.
+This process takes approximately 19m50s on my 2021 MacBook Pro, and results in a 15.12GiB `pwned-passwords-v8.bin` file. Note that you must use the _ordered by hash_ database file for correct results here.
 
 | File                        | SHA-1 of stock 7-Zip file                | SHA-1 of binary file                     |
 | --------------------------- | ---------------------------------------- | ---------------------------------------- |
@@ -82,6 +82,7 @@ This process takes approximately 13m57s on my 2021 MacBook Pro, and results in a
 | Version 5 (ordered by hash) | 4f505d687a7dd3d67980983787adb33cb768c7b2 | 1282ad6cff4c03613d5c99d47a11dda354898494 |
 | Version 6 (ordered by hash) | f0447a064aee7e3b658959fab54dba79b926f429 | a2eefe0f53fe1ec273bce1eb1e24a17adafc6ef0 |
 | Version 7 (ordered by hash) | dba43bd82997d5cef156219cb0d295e1ab948727 | 6454ac4b9807ababbc6d0295aad2162f8873d628 |
+| Version 8 (ordered by hash) | 3499a3f82bb94f62cbd9bc782d6d20324e7cde8e | 08422b1ae8536047affebe8fb61d8a0448d18a73 |
 
 ### File Format
 
@@ -107,15 +108,15 @@ The data segment contains each hash in sorted order, paired with a 16-bit big-en
                                       2 bytes                                    2 bytes
 ```
 
-This sequence repeats for all hashes in the dataset, which in the Version 7 export is 613,584,246. The observant reader might notice at this point that all these numbers line up:
+This sequence repeats for all hashes in the dataset, which in the Version 8 export is 847,223,402. The observant reader might notice at this point that all these numbers line up:
 
 ```
 $ ls -la pwned-passwords-v*.bin
--rw-r--r--   1 tylerchr  staff  11792318402 Dec 17 00:41 pwned-passwords-v7.bin
+-rw-r--r--   1 tylerchr  staff  16231462366 Dec 20 01:48 pwned-passwords-v8.bin
 
-# (256^3 * 8) + (613,584,246 * (17 + 2)) = 11792318402 bytes
-# (256^3 * 8) + (613,584,246 * 19)       = 11792318402 bytes
-# 134,217,728 + 11,658,100,674           = 11792318402 bytes
+# (256^3 * 8) + (847,223,402 * (17 + 2)) = 11792318402 bytes
+# (256^3 * 8) + (847,223,402 * 19)       = 11792318402 bytes
+# 134,217,728 + 16,097,244,638           = 11792318402 bytes
 ```
 
 For more details on the design choices of this file format, see [the associated blog post](https://github.com/tylerchr/pwnedpass/blob/master/DETAILS.md).
