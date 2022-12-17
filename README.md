@@ -72,7 +72,7 @@ Writing index segment...
 OK
 ```
 
-This process takes approximately 19m50s on my 2021 MacBook Pro, and results in a 15.12GiB `pwned-passwords-v8.bin` file. Note that you must use the _ordered by hash_ database file for correct results here.
+This process takes approximately 19m50s on my 2021 MacBook Pro (or 1m13s if the hashes are already decompressed) and results in a 15.12GiB `pwned-passwords-v8.bin` file. Note that you must use the _ordered by hash_ database file for correct results here.
 
 | File                        | SHA-1 of stock 7-Zip file                | SHA-1 of binary file                     |
 | --------------------------- | ---------------------------------------- | ---------------------------------------- |

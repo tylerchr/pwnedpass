@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 )
 
 // IndexSegmentSize is the exact size of the index segment in bytes.
@@ -38,22 +37,16 @@ func main() {
 	dff := bufio.NewWriterSize(df, 16<<20)
 	defer dff.Flush()
 
-	// prepare header buffer
+	// prepare header and record buffers
 	var hdr bytes.Buffer
+	var record [22]byte
 
 	var dataPointer uint64
 	var currentHeader [3]byte
 
-	// open a stream of zeros
-	zero, err := os.Open("/dev/zero")
-	if err != nil {
-		panic(err)
-	}
-	defer zero.Close()
-
-	// write zeros in the index segment space
+	// skip over the index segment space
 	fmt.Println("Reserving space for the index segment...")
-	if _, err := io.CopyN(dff, zero, IndexSegmentSize); err != nil {
+	if _, err := df.Seek(IndexSegmentSize, io.SeekStart); err != nil {
 		panic(err)
 	}
 
@@ -63,29 +56,28 @@ func main() {
 	for s.Scan() {
 
 		// read line, trimming right-hand whitespace
-		line := strings.TrimRight(s.Text(), string([]byte{0x20}))
+		line := bytes.TrimRight(s.Bytes(), " \r\n")
 
 		// decode hash
-		hh, err := hex.DecodeString(line[0:40])
-		if err != nil {
+		if _, err := hex.Decode(record[:20], line[:40]); err != nil {
 			panic(err)
 		}
 
 		// parse count
-		count, err := strconv.ParseInt(line[41:], 10, 64)
+		count, err := strconv.ParseInt(string(line[41:]), 10, 64)
 		if err != nil {
 			panic(err)
 		}
 
 		// write the header pointer out, if necessary
-		if dataPointer == 0 || !bytes.Equal(currentHeader[:], hh[0:3]) {
-			copy(currentHeader[:], hh[0:3])
+		if dataPointer == 0 || !bytes.Equal(currentHeader[:], record[0:3]) {
+			copy(currentHeader[:], record[0:3])
 			binary.Write(&hdr, binary.BigEndian, dataPointer)
 		}
 
 		// write back out
-		binary.Write(dff, binary.BigEndian, hh[3:]) // trim off the first three bytes to use as the index
-		binary.Write(dff, binary.BigEndian, uint16(count))
+		binary.BigEndian.PutUint16(record[20:], uint16(count))
+		dff.Write(record[3:]) // trim off the first three bytes to use as the index
 
 		// increment index of next write
 		dataPointer += (17 + 2) // length of written data
