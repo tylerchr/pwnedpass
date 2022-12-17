@@ -95,18 +95,56 @@ func (od *OfflineDatabase) Close() error {
 func (od *OfflineDatabase) Pwned(hash [20]byte) (frequency int, err error) {
 
 	var prefix [3]byte
-	copy(prefix[0:3], hash[0:3])
+	copy(prefix[:], hash[:])
 
-	var pwnedHash [20]byte
-	err = od.Scan(prefix, prefix, pwnedHash[:], func(freq uint16) bool {
-		if pwnedHash == hash {
-			frequency = int(freq)
-			return true
+	// look up location in the index
+	start, length, err := od.lookup(prefix)
+	if err != nil {
+		return 0, err
+	}
+
+	var (
+		// lo and hi are the bounds of the binary search;
+		// the range narrows to zero as the search proceeds
+		lo, hi int = 0, int(length / 19)
+
+		// test is the current index to test; always between lo and hi
+		test int = hi
+
+		// rbuf is a temporary buffer to read into
+		rbuf [19]byte
+
+		// suffix holds the last 17 bytes of the hash
+		// count holds the binary-encoded frequency of that hash
+		suffix, count = rbuf[0:17], rbuf[17:19]
+	)
+
+	// binary search between start and start+length
+	for {
+
+		// bisect
+		test = lo + ((hi - lo) / 2)
+
+		// lookup
+		if _, err := od.database.ReadAt(rbuf[:], DataSegmentOffset+start+int64(test*19)); err != nil {
+			return 0, err
 		}
-		return false
-	})
 
-	return frequency, err
+		// compare
+		switch bytes.Compare(hash[3:20], suffix) {
+		case -1: // hash < curhash
+			hi = test
+		case 1: // hash > curhash
+			lo = test
+		case 0: // equal!
+			return int(binary.BigEndian.Uint16(count)), nil
+		}
+
+		// not found?
+		if hi-lo == 1 {
+			return 0, nil
+		}
+	}
 
 }
 
