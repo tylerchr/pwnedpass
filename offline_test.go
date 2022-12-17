@@ -17,7 +17,7 @@ func TestPwned(t *testing.T) {
 	}{
 		{
 			Password:  "P@ssword",
-			Frequency: 5728,
+			Frequency: 10664,
 		},
 		{
 			Password:  "775f96123edda7b3bc918bb155757d58df98246e",
@@ -74,22 +74,22 @@ func TestScan(t *testing.T) {
 		{
 			StartPrefix: [3]byte{0x00, 0x00, 0x00},
 			EndPrefix:   [3]byte{0x00, 0x00, 0x00},
-			Hashes:      73,
+			Hashes:      145,
 		},
 		{
 			StartPrefix: [3]byte{0x05, 0x31, 0x91},
 			EndPrefix:   [3]byte{0x05, 0x31, 0x91},
-			Hashes:      43,
+			Hashes:      68,
 		},
 		{
 			StartPrefix: [3]byte{0x05, 0x31, 0x91},
 			EndPrefix:   [3]byte{0x05, 0x31, 0x92},
-			Hashes:      70,
+			Hashes:      124,
 		},
 		{
 			StartPrefix: [3]byte{0xFF, 0xFF, 0xFF},
 			EndPrefix:   [3]byte{0xFF, 0xFF, 0xFF},
-			Hashes:      30,
+			Hashes:      46,
 		},
 	}
 
@@ -149,11 +149,11 @@ func BenchmarkScan(b *testing.B) {
 			b.Fatalf("[case %d] unexpected error: %s", i, err)
 		}
 
-		if expected := 43; count != expected {
+		if expected := 68; count != expected {
 			b.Errorf("[case %d] unexpected hash count: expected '%d' but got '%d'", i, expected, count)
 		}
 
-		if expected := 146; frequency != expected {
+		if expected := 272; frequency != expected {
 			b.Errorf("[case %d] unexpected total leaks: expected '%d' but got '%d'", i, expected, frequency)
 		}
 
@@ -170,12 +170,12 @@ func TestLookup(t *testing.T) {
 		{
 			Start:    [3]byte{0x00, 0x00, 0x00},
 			Location: 0x00,
-			Length:   1387,
+			Length:   2755,
 		},
 		{
 			Start:    [3]byte{0x05, 0x31, 0x91},
-			Location: 0x0B88C28A,
-			Length:   817,
+			Location: 0x137B4739,
+			Length:   1292,
 		},
 	}
 
@@ -229,7 +229,7 @@ func BenchmarkHTTPPassword(b *testing.B) {
 
 		if n, err := io.Copy(ioutil.Discard, resp.Body); err != nil {
 			b.Fatalf("unexpected error: %s\n", err)
-		} else if n != 5 {
+		} else if n != 6 {
 			b.Fatalf("unexpected response length: %d\n", n)
 		}
 
@@ -265,7 +265,7 @@ func BenchmarkHTTPRange(b *testing.B) {
 
 		if n, err := io.Copy(ioutil.Discard, resp.Body); err != nil {
 			b.Fatalf("unexpected error: %s\n", err)
-		} else if n != 19957 {
+		} else if n != 32982 {
 			b.Fatalf("unexpected response length: %d\n", n)
 		}
 

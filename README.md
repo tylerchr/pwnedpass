@@ -114,9 +114,9 @@ This sequence repeats for all hashes in the dataset, which in the Version 8 expo
 $ ls -la pwned-passwords-v*.bin
 -rw-r--r--   1 tylerchr  staff  16231462366 Dec 20 01:48 pwned-passwords-v8.bin
 
-# (256^3 * 8) + (847,223,402 * (17 + 2)) = 11792318402 bytes
-# (256^3 * 8) + (847,223,402 * 19)       = 11792318402 bytes
-# 134,217,728 + 16,097,244,638           = 11792318402 bytes
+# (256^3 * 8) + (847,223,402 * (17 + 2)) = 16231462366 bytes
+# (256^3 * 8) + (847,223,402 * 19)       = 16231462366 bytes
+# 134,217,728 + 16,097,244,638           = 16231462366 bytes
 ```
 
 For more details on the design choices of this file format, see [the associated blog post](https://github.com/tylerchr/pwnedpass/blob/master/DETAILS.md).
