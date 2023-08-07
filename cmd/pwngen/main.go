@@ -93,7 +93,6 @@ func main() {
 		if err != nil {
 			sugar.Warnf("failed to send request: %s", err)
 		}
-		defer resp.Body.Close()
 		s := bufio.NewScanner(resp.Body)
 		for s.Scan() {
 			// read line, trimming right-hand whitespace
@@ -127,6 +126,8 @@ func main() {
 				panic(err)
 			}
 		}
+		resp.Body.Close()
+
 		// make sure all data segment writes are through
 		dff.Flush()
 	}
