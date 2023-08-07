@@ -40,22 +40,32 @@ type response struct {
 // The work that needs to be performed
 // The input type should implement the WorkFunction interface
 func (w loadWorker) Run(ctx context.Context) interface{} {
-	httpClient := &http.Client{}
-	req, err := http.NewRequest("GET", "https://api.pwnedpasswords.com/range/"+fmt.Sprintf("%05x", w.index), nil)
-	if err != nil {
-		w.sugar.Warnf("failed to send request: %s", err)
-	}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		w.sugar.Warnf("failed to send request: %s", err)
-	}
-	defer resp.Body.Close()
+	var body []byte
+	for i := 0; i < 3; i++ {
+		httpClient := &http.Client{}
+		req, err := http.NewRequest("GET", "https://api.pwnedpasswords.com/range/"+fmt.Sprintf("%05x", w.index), nil)
+		if err != nil {
+			w.sugar.Warnf("failed to send request: %s", err)
+			continue
+		}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			w.sugar.Warnf("failed to send request: %s", err)
+			continue
+		}
+		defer resp.Body.Close()
 
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		w.sugar.Warnf("failed to read response body: %s", err)
+		body, err = io.ReadAll(resp.Body)
+		if err != nil {
+			w.sugar.Warnf("failed to read response body: %s", err)
+			continue
+		}
+		break
 	}
-	return response{Index: w.index, Body: b}
+	if len(body) == 0 {
+		w.sugar.Fatal("failed to load index %d", w.index)
+	}
+	return response{Index: w.index, Body: body}
 }
 func main() {
 
@@ -118,7 +128,7 @@ func main() {
 	sugar.Infof("Writing data segment...")
 	inputChan := make(chan concurrently.WorkFunction)
 	ctx := context.Background()
-	output := concurrently.Process(ctx, inputChan, &concurrently.Options{PoolSize: 10, OutChannelBuffer: 10})
+	output := concurrently.Process(ctx, inputChan, &concurrently.Options{PoolSize: 30, OutChannelBuffer: 30})
 	go func() {
 		for i := int64(0); i < int64(math.Pow(16, 5)); i++ {
 			inputChan <- loadWorker{sugar, i}
