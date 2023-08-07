@@ -7,4 +7,7 @@ require (
 	golang.org/x/exp v0.0.0-20200228211341-fcea875c7e85
 )
 
-require go.uber.org/multierr v1.10.0 // indirect
+require (
+	github.com/tejzpr/ordered-concurrently/v3 v3.0.1
+	go.uber.org/multierr v1.10.0 // indirect
+)

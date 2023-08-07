@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -11,9 +12,12 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	concurrently "github.com/tejzpr/ordered-concurrently/v3"
 )
 
 // IndexSegmentSize is the exact size of the index segment in bytes.
@@ -23,6 +27,36 @@ const IndexSegmentSize = 256 << 16 << 3 // exactly 256^3 MB
 // to be created.
 var DatabaseFilename = "pwned-passwords.bin"
 
+type loadWorker struct {
+	sugar *zap.SugaredLogger
+	index int64
+}
+
+type response struct {
+	Index int64
+	Body  []byte
+}
+
+// The work that needs to be performed
+// The input type should implement the WorkFunction interface
+func (w loadWorker) Run(ctx context.Context) interface{} {
+	httpClient := &http.Client{}
+	req, err := http.NewRequest("GET", "https://api.pwnedpasswords.com/range/"+fmt.Sprintf("%05x", w.index), nil)
+	if err != nil {
+		w.sugar.Warnf("failed to send request: %s", err)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		w.sugar.Warnf("failed to send request: %s", err)
+	}
+	defer resp.Body.Close()
+
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		w.sugar.Warnf("failed to read response body: %s", err)
+	}
+	return response{Index: w.index, Body: b}
+}
 func main() {
 
 	// choose a database filename
@@ -82,29 +116,34 @@ func main() {
 
 	// write the data segment
 	sugar.Infof("Writing data segment...")
-	httpClient := &http.Client{}
-	for i := int64(0); i < int64(math.Pow(16, 5)); i++ {
-		sugar.Infof("Downloading range %05x...", i)
-		req, err := http.NewRequest("GET", "https://api.pwnedpasswords.com/range/"+fmt.Sprintf("%05x", i), nil)
-		if err != nil {
-			sugar.Warnf("failed to send request: %s", err)
+	inputChan := make(chan concurrently.WorkFunction)
+	ctx := context.Background()
+	output := concurrently.Process(ctx, inputChan, &concurrently.Options{PoolSize: 10, OutChannelBuffer: 10})
+	go func() {
+		for i := int64(0); i < int64(math.Pow(16, 5)); i++ {
+			inputChan <- loadWorker{sugar, i}
 		}
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			sugar.Warnf("failed to send request: %s", err)
+		close(inputChan)
+	}()
+	for out := range output {
+
+		resp := out.Value.(response)
+		if resp.Index%100 == 0 {
+			sugar.Infof("Handling segment %d", resp.Index)
 		}
-		s := bufio.NewScanner(resp.Body)
-		for s.Scan() {
+		scanner := bufio.NewScanner(strings.NewReader(string(resp.Body)))
+		for scanner.Scan() {
 			// read line, trimming right-hand whitespace
-			line := bytes.TrimRight(s.Bytes(), " \r\n")
-			line = []byte(fmt.Sprintf("%05x%s", i, line))
+			line := strings.TrimRight(scanner.Text(), " \r\n")
+
+			data := []byte(fmt.Sprintf("%05x%s", resp.Index, line))
 			// decode hash
-			if _, err := hex.Decode(record[:20], line[:40]); err != nil {
+			if _, err := hex.Decode(record[:20], data[:40]); err != nil {
 				panic(err)
 			}
 
 			// parse count
-			count, err := strconv.ParseInt(string(line[41:]), 10, 64)
+			count, err := strconv.ParseInt(string(data[41:]), 10, 64)
 			if err != nil {
 				panic(err)
 			}
@@ -121,12 +160,7 @@ func main() {
 
 			// increment index of next write
 			dataPointer += (17 + 2) // length of written data
-
-			if err := s.Err(); err != nil {
-				panic(err)
-			}
 		}
-		resp.Body.Close()
 
 		// make sure all data segment writes are through
 		dff.Flush()
