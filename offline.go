@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/exp/mmap"
 )
 
@@ -51,6 +54,7 @@ type (
 	// An OfflineDatabase is a client for querying Pwned Passwords locally.
 	OfflineDatabase struct {
 		database readCloserAt
+		logger   zap.Logger
 	}
 
 	// readCloserAt is an io.ReaderAt that can be Closed and whose
@@ -74,8 +78,30 @@ func NewOfflineDatabase(dbFile string) (*OfflineDatabase, error) {
 		return nil, fmt.Errorf("error opening index: %s", err)
 	}
 
+	encoderCfg := zap.NewProductionEncoderConfig()
+	encoderCfg.TimeKey = "timestamp"
+	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	config := zap.Config{
+		Level:             zap.NewAtomicLevelAt(zap.InfoLevel),
+		Development:       false,
+		DisableCaller:     true,
+		DisableStacktrace: false,
+		Sampling:          nil,
+		Encoding:          "json",
+		EncoderConfig:     encoderCfg,
+		OutputPaths: []string{
+			"stderr",
+		},
+		ErrorOutputPaths: []string{
+			"stderr",
+		},
+		InitialFields: map[string]interface{}{
+			"pid": os.Getpid(),
+		},
+	}
 	odb := &OfflineDatabase{
 		database: db,
+		logger:   *zap.Must(config.Build()),
 	}
 
 	return odb, nil
@@ -294,7 +320,9 @@ func (od *OfflineDatabase) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		frequency, err := od.Pwned(hash)
+		od.logger.Sugar().Infof("checking password: %v", hash)
 		if err != nil {
+			od.logger.Sugar().Warnf("error checking password: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
