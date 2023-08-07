@@ -7,8 +7,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
+	"net/http"
 	"os"
 	"strconv"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // IndexSegmentSize is the exact size of the index segment in bytes.
@@ -26,6 +31,31 @@ func main() {
 		dbFile = os.Args[1]
 	}
 
+	encoderCfg := zap.NewProductionEncoderConfig()
+	encoderCfg.TimeKey = "timestamp"
+	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+	config := zap.Config{
+		Level:             zap.NewAtomicLevelAt(zap.InfoLevel),
+		Development:       false,
+		DisableCaller:     true,
+		DisableStacktrace: false,
+		Sampling:          nil,
+		Encoding:          "json",
+		EncoderConfig:     encoderCfg,
+		OutputPaths: []string{
+			"stderr",
+		},
+		ErrorOutputPaths: []string{
+			"stderr",
+		},
+		InitialFields: map[string]interface{}{
+			"pid": os.Getpid(),
+		},
+	}
+
+	logger := zap.Must(config.Build())
+	defer logger.Sync() // flushes buffer, if any
+	sugar := logger.Sugar()
 	// open data file
 	df, err := os.Create(dbFile)
 	if err != nil {
@@ -45,50 +75,61 @@ func main() {
 	var currentHeader [3]byte
 
 	// skip over the index segment space
-	fmt.Println("Reserving space for the index segment...")
+	sugar.Infof("Reserving space for the index segment...")
 	if _, err := df.Seek(IndexSegmentSize, io.SeekStart); err != nil {
 		panic(err)
 	}
 
 	// write the data segment
-	fmt.Println("Writing data segment...")
-	s := bufio.NewScanner(os.Stdin)
-	for s.Scan() {
-
-		// read line, trimming right-hand whitespace
-		line := bytes.TrimRight(s.Bytes(), " \r\n")
-
-		// decode hash
-		if _, err := hex.Decode(record[:20], line[:40]); err != nil {
-			panic(err)
-		}
-
-		// parse count
-		count, err := strconv.ParseInt(string(line[41:]), 10, 64)
+	sugar.Infof("Writing data segment...")
+	httpClient := &http.Client{}
+	for i := int64(0); i < int64(math.Pow(16, 5)); i++ {
+		sugar.Infof("Downloading range %05x...", i)
+		req, err := http.NewRequest("GET", "https://api.pwnedpasswords.com/range/"+fmt.Sprintf("%05x", i), nil)
 		if err != nil {
-			panic(err)
+			sugar.Warnf("failed to send request: %s", err)
 		}
-
-		// write the header pointer out, if necessary
-		if dataPointer == 0 || !bytes.Equal(currentHeader[:], record[0:3]) {
-			copy(currentHeader[:], record[0:3])
-			binary.Write(&hdr, binary.BigEndian, dataPointer)
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			sugar.Warnf("failed to send request: %s", err)
 		}
+		defer resp.Body.Close()
+		s := bufio.NewScanner(resp.Body)
+		for s.Scan() {
+			// read line, trimming right-hand whitespace
+			line := bytes.TrimRight(s.Bytes(), " \r\n")
+			line = []byte(fmt.Sprintf("%05x%s", i, line))
+			// decode hash
+			if _, err := hex.Decode(record[:20], line[:40]); err != nil {
+				panic(err)
+			}
 
-		// write back out
-		binary.BigEndian.PutUint16(record[20:], uint16(count))
-		dff.Write(record[3:]) // trim off the first three bytes to use as the index
+			// parse count
+			count, err := strconv.ParseInt(string(line[41:]), 10, 64)
+			if err != nil {
+				panic(err)
+			}
 
-		// increment index of next write
-		dataPointer += (17 + 2) // length of written data
+			// write the header pointer out, if necessary
+			if dataPointer == 0 || !bytes.Equal(currentHeader[:], record[0:3]) {
+				copy(currentHeader[:], record[0:3])
+				binary.Write(&hdr, binary.BigEndian, dataPointer)
+			}
+
+			// write back out
+			binary.BigEndian.PutUint16(record[20:], uint16(count))
+			dff.Write(record[3:]) // trim off the first three bytes to use as the index
+
+			// increment index of next write
+			dataPointer += (17 + 2) // length of written data
+
+			if err := s.Err(); err != nil {
+				panic(err)
+			}
+		}
+		// make sure all data segment writes are through
+		dff.Flush()
 	}
-
-	if err := s.Err(); err != nil {
-		panic(err)
-	}
-
-	// make sure all data segment writes are through
-	dff.Flush()
 
 	// assert that the header data is the expected size (exactly 256^3 MB)
 	if hdr.Len() != IndexSegmentSize {
@@ -100,11 +141,11 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("Writing index segment...")
+	sugar.Infof("Writing index segment...")
 	if _, err := io.Copy(dff, &hdr); err != nil {
 		panic(err)
 	}
 
-	fmt.Println("OK")
+	sugar.Infof("OK")
 
 }

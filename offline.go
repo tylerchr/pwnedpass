@@ -152,9 +152,9 @@ func (od *OfflineDatabase) Pwned(hash [20]byte) (frequency int, err error) {
 // Iteration begins at the first hash with a prefix of startPrefix and continues
 // until one of these conditions is met:
 //
-//     1) the last hash with a prefix of endPrefix has been reached,
-//     2) the callback returns "true" to indicate a stop is requested,
-//  or 3) the end of the hash database is reached.
+//  1. the last hash with a prefix of endPrefix has been reached,
+//  2. the callback returns "true" to indicate a stop is requested,
+//  3. the end of the hash database is reached.
 //
 // The binary-encoded hash is written into the hash slice argument, which must be
 // at least 20 bytes long (providing a smaller slice will result in a panic).
@@ -269,9 +269,9 @@ func (od *OfflineDatabase) lookup(start [3]byte) (location, length int64, err er
 // ServeHTTP implements the http.Handler interface by approximating the online
 // Pwned Password V2 API. The following routes are available:
 //
-//     /pwnedpassword/password
-//     /pwnedpassword/hash
-//     /range/ABCDE
+//	/pwnedpassword/password
+//	/pwnedpassword/hash
+//	/range/ABCDE
 //
 // Their behavior is very similar to that of the online equivalent; the same
 // documentation should apply.
@@ -300,8 +300,8 @@ func (od *OfflineDatabase) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if frequency == 0 {
-			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprintln(w, "Password not compromised")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, 0)
 		} else {
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprintln(w, frequency)
