@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	go.uber.org/zap v1.25.0
-	golang.org/x/exp v0.0.0-20200228211341-fcea875c7e85
+	golang.org/x/exp v0.0.0-20230811145659-89c5cff77bcb
 )
 
 require (
