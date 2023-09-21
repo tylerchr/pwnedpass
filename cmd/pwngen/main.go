@@ -11,12 +11,15 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/robfig/cron/v3"
 	concurrently "github.com/tejzpr/ordered-concurrently/v3"
 )
 
@@ -102,6 +105,20 @@ func main() {
 	logger := zap.Must(config.Build())
 	defer logger.Sync() // flushes buffer, if any
 	sugar := logger.Sugar()
+
+	Run(sugar, dbFile)
+	cron := cron.New()
+	cron.AddFunc("@daily", func() {
+		Run(sugar, dbFile)
+	})
+	cron.Start()
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
+	<-done
+	cron.Stop()
+}
+
+func Run(logger *zap.SugaredLogger, dbFile string) {
 	// open data file
 	df, err := os.Create(dbFile)
 	if err != nil {
@@ -121,19 +138,19 @@ func main() {
 	var currentHeader [3]byte
 
 	// skip over the index segment space
-	sugar.Infof("Reserving space for the index segment...")
+	logger.Infof("Reserving space for the index segment...")
 	if _, err := df.Seek(IndexSegmentSize, io.SeekStart); err != nil {
-		panic(err)
+		logger.Panicf("failed to seek to index segment: %s", err)
 	}
 
 	// write the data segment
-	sugar.Infof("Writing data segment...")
+	logger.Infof("Writing data segment...")
 	inputChan := make(chan concurrently.WorkFunction)
 	ctx := context.Background()
 	output := concurrently.Process(ctx, inputChan, &concurrently.Options{PoolSize: 30, OutChannelBuffer: 30})
 	go func() {
 		for i := int64(0); i < int64(math.Pow(16, 5)); i++ {
-			inputChan <- loadWorker{sugar, i}
+			inputChan <- loadWorker{logger, i}
 		}
 		close(inputChan)
 	}()
@@ -141,7 +158,7 @@ func main() {
 
 		resp := out.Value.(response)
 		if resp.Index%100 == 0 {
-			sugar.Infof("Handling segment %d", resp.Index)
+			logger.Infof("Handling segment %d", resp.Index)
 		}
 		scanner := bufio.NewScanner(strings.NewReader(string(resp.Body)))
 		for scanner.Scan() {
@@ -151,13 +168,13 @@ func main() {
 			data := []byte(fmt.Sprintf("%05x%s", resp.Index, line))
 			// decode hash
 			if _, err := hex.Decode(record[:20], data[:40]); err != nil {
-				panic(err)
+				logger.Panicf("failed to decode hash: %s", err)
 			}
 
 			// parse count
 			count, err := strconv.ParseInt(string(data[41:]), 10, 64)
 			if err != nil {
-				panic(err)
+				logger.Panicf("failed to parse count: %s", err)
 			}
 
 			// write the header pointer out, if necessary
@@ -180,20 +197,19 @@ func main() {
 
 	// assert that the header data is the expected size (exactly 256^3 MB)
 	if hdr.Len() != IndexSegmentSize {
-		panic(fmt.Errorf("unexpected amount of header data: %d bytes", hdr.Len()))
+		logger.Panicf("unexpected header size: expected '%d' but got '%d'", IndexSegmentSize, hdr.Len())
 	}
 
 	// seek back to the beginning of the file
 	if _, err := df.Seek(0, io.SeekStart); err != nil {
-		panic(err)
+		logger.Panicf("failed to seek to beginning of file: %s", err)
 	}
 
-	sugar.Infof("Writing index segment...")
+	logger.Infof("Writing index segment...")
 	if _, err := io.Copy(dff, &hdr); err != nil {
-		panic(err)
+		logger.Panicf("failed to write index segment: %s", err)
 	}
 
-	sugar.Infof("OK")
+	logger.Infof("OK")
 	os.Remove(LockFileName)
-
 }

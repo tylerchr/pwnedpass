@@ -118,9 +118,11 @@ func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, 
 
 	if _, err := os.Stat(updatedDbFile); err == nil {
 		if !lockExists {
+			logger.Info("Updating database")
 			if err := os.Rename(updatedDbFile, dbFile); err != nil {
 				return nil, fmt.Errorf("error moving updated database: %s", err)
 			}
+			logger.Info("Database updated")
 		}
 	}
 
@@ -128,6 +130,7 @@ func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, 
 	if err != nil {
 		return nil, fmt.Errorf("error opening index: %s", err)
 	}
+	logger.Info("Database opened")
 	c := cron.New()
 	odb := &OfflineDatabase{
 		database: db,
@@ -142,6 +145,7 @@ func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, 
 				lockExists = true
 			}
 			if !lockExists {
+				logger.Info("Updating database")
 				db.Close()
 				if err := os.Rename(updatedDbFile, dbFile); err != nil {
 					log.Panic(err)
@@ -151,6 +155,7 @@ func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, 
 					log.Panic(err)
 				}
 				odb.database = db
+				logger.Info("Database updated")
 			}
 		}
 	})
@@ -410,7 +415,7 @@ func (od *OfflineDatabase) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		// perform the scan
 		response := bytes.NewBuffer(buffer[:])
-		od.Scan(start, end, hash[:], func(freq uint16) bool {
+		err := od.Scan(start, end, hash[:], func(freq uint16) bool {
 
 			// convert to capital hex bytes
 			for i, v := range hash[:] {
@@ -428,7 +433,10 @@ func (od *OfflineDatabase) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return false
 
 		})
-
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		return
