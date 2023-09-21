@@ -8,12 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/exp/mmap"
@@ -21,7 +24,9 @@ import (
 
 const (
 	// DatabaseFilename is the default path to the database.
-	DatabaseFilename = "pwned-passwords.bin"
+	DatabaseFilename        = "pwned-passwords.bin"
+	UpdatedDatabaseFilename = "updated-pwned-passwords.bin"
+	LockFileName            = "pwned-passwords.lock"
 
 	// IndexSegmentSize is the exact size of the index segment in bytes.
 	IndexSegmentSize = 256 << 16 << 3 // exactly 256^3 MB
@@ -55,6 +60,7 @@ type (
 	OfflineDatabase struct {
 		database readCloserAt
 		logger   zap.Logger
+		cron     *cron.Cron
 	}
 
 	// readCloserAt is an io.ReaderAt that can be Closed and whose
@@ -71,13 +77,8 @@ type (
 
 // NewOfflineDatabase opens a new OfflineDatabase using the data in the given
 // database file.
-func NewOfflineDatabase(dbFile string) (*OfflineDatabase, error) {
-
-	db, err := mmap.Open(dbFile)
-	if err != nil {
-		return nil, fmt.Errorf("error opening index: %s", err)
-	}
-
+func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, error) {
+	lockExists := false
 	encoderCfg := zap.NewProductionEncoderConfig()
 	encoderCfg.TimeKey = "timestamp"
 	encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -99,17 +100,68 @@ func NewOfflineDatabase(dbFile string) (*OfflineDatabase, error) {
 			"pid": os.Getpid(),
 		},
 	}
-	odb := &OfflineDatabase{
-		database: db,
-		logger:   *zap.Must(config.Build()),
+	logger := *zap.Must(config.Build())
+	for {
+		if _, err := os.Stat(LockFileName); err == nil {
+			lockExists = true
+		}
+		if _, err := os.Stat(dbFile); err == nil {
+			break
+		} else {
+			// Check if error indicates a missing file?
+			if os.IsNotExist(err) && lockExists {
+				logger.Warn("Lock file exists, but database file does not. Waiting for lock to be released.")
+				time.Sleep(1 * time.Minute)
+			}
+		}
 	}
 
+	if _, err := os.Stat(updatedDbFile); err == nil {
+		if !lockExists {
+			if err := os.Rename(updatedDbFile, dbFile); err != nil {
+				return nil, fmt.Errorf("error moving updated database: %s", err)
+			}
+		}
+	}
+
+	db, err := mmap.Open(dbFile)
+	if err != nil {
+		return nil, fmt.Errorf("error opening index: %s", err)
+	}
+	c := cron.New()
+	odb := &OfflineDatabase{
+		database: db,
+		logger:   logger,
+		cron:     c,
+	}
+
+	c.AddFunc("@hourly", func() {
+		if _, err := os.Stat(updatedDbFile); err == nil {
+			lockExists := false
+			if _, err := os.Stat(LockFileName); err == nil {
+				lockExists = true
+			}
+			if !lockExists {
+				db.Close()
+				if err := os.Rename(updatedDbFile, dbFile); err != nil {
+					log.Panic(err)
+				}
+				db, err := mmap.Open(dbFile)
+				if err != nil {
+					log.Panic(err)
+				}
+				odb.database = db
+			}
+		}
+	})
+	c.Start()
 	return odb, nil
 
 }
 
 // Close frees resources associated with the database.
 func (od *OfflineDatabase) Close() error {
+	od.cron.Stop()
 	return od.database.Close()
 }
 

@@ -25,7 +25,8 @@ const IndexSegmentSize = 256 << 16 << 3 // exactly 256^3 MB
 
 // DatabaseFilename indicates the default location of the database file
 // to be created.
-var DatabaseFilename = "pwned-passwords.bin"
+var DatabaseFilename = "updated-pwned-passwords.bin"
+var LockFileName = "pwned-passwords.lock"
 
 type loadWorker struct {
 	sugar *zap.SugaredLogger
@@ -40,6 +41,7 @@ type response struct {
 // The work that needs to be performed
 // The input type should implement the WorkFunction interface
 func (w loadWorker) Run(ctx context.Context) interface{} {
+	os.Create(LockFileName)
 	var body []byte
 	for i := 0; i < 3; i++ {
 		httpClient := &http.Client{}
@@ -192,5 +194,6 @@ func main() {
 	}
 
 	sugar.Infof("OK")
+	os.Remove(LockFileName)
 
 }

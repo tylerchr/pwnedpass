@@ -25,7 +25,7 @@ func TestPwned(t *testing.T) {
 		},
 	}
 
-	od, err := NewOfflineDatabase(DatabaseFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename, UpdatedDatabaseFilename)
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -44,7 +44,7 @@ func TestPwned(t *testing.T) {
 
 func BenchmarkPwned(b *testing.B) {
 
-	od, err := NewOfflineDatabase(DatabaseFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename, UpdatedDatabaseFilename)
 	if err != nil {
 		b.Fatalf("unexpected error: %s", err)
 	}
@@ -93,7 +93,7 @@ func TestScan(t *testing.T) {
 		},
 	}
 
-	od, err := NewOfflineDatabase(DatabaseFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename, UpdatedDatabaseFilename)
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -127,7 +127,7 @@ func BenchmarkScan(b *testing.B) {
 		EndPrefix   = [3]byte{0x05, 0x31, 0x91}
 	)
 
-	od, err := NewOfflineDatabase(DatabaseFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename, UpdatedDatabaseFilename)
 	if err != nil {
 		b.Fatalf("unexpected error: %s", err)
 	}
@@ -179,7 +179,7 @@ func TestLookup(t *testing.T) {
 		},
 	}
 
-	od, err := NewOfflineDatabase(DatabaseFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename, UpdatedDatabaseFilename)
 	if err != nil {
 		t.Fatalf("unexpected error: %s", err)
 	}
@@ -206,7 +206,7 @@ func TestLookup(t *testing.T) {
 func BenchmarkHTTPPassword(b *testing.B) {
 
 	// open the offline database
-	od, err := NewOfflineDatabase(DatabaseFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename, UpdatedDatabaseFilename)
 	if err != nil {
 		panic(err)
 	}
@@ -242,7 +242,7 @@ func BenchmarkHTTPPassword(b *testing.B) {
 func BenchmarkHTTPRange(b *testing.B) {
 
 	// open the offline database
-	od, err := NewOfflineDatabase(DatabaseFilename)
+	od, err := NewOfflineDatabase(DatabaseFilename, UpdatedDatabaseFilename)
 	if err != nil {
 		panic(err)
 	}

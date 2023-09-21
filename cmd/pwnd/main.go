@@ -10,12 +10,16 @@ import (
 func main() {
 
 	// parse flags
-	var dbFile string
+	var (
+		dbFile        string
+		updatedDbFile string
+	)
 	flag.StringVar(&dbFile, "database", pwnedpass.DatabaseFilename, "path to the database file")
+	flag.StringVar(&updatedDbFile, "updated-database", pwnedpass.UpdatedDatabaseFilename, "path to the database file")
 	flag.Parse()
 
 	// open the offline database
-	od, err := pwnedpass.NewOfflineDatabase(dbFile)
+	od, err := pwnedpass.NewOfflineDatabase(dbFile, updatedDbFile)
 	if err != nil {
 		panic(err)
 	}
