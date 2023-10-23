@@ -104,6 +104,8 @@ func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, 
 	for {
 		if _, err := os.Stat(LockFileName); err == nil {
 			lockExists = true
+		} else {
+			break
 		}
 		if _, err := os.Stat(dbFile); err == nil {
 			break
