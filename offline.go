@@ -152,7 +152,7 @@ func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, 
 			}
 			if !lockExists {
 				logger.Info("Updating database")
-				db.Close()
+				odb.file.database.Close()
 				if err := os.Rename(updatedDbFile, dbFile); err != nil {
 					log.Panic(err)
 				}
