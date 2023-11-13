@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -53,14 +52,17 @@ var (
 	bufferPool = &sync.Pool{New: func() interface{} {
 		return make([]byte, 8<<10)
 	}}
+
+	logger *zap.Logger
 )
 
 type (
 	// An OfflineDatabase is a client for querying Pwned Passwords locally.
 	OfflineDatabase struct {
-		file   *DatabaseFile
-		logger zap.Logger
-		cron   *cron.Cron
+		file          *DatabaseFile
+		cron          *cron.Cron
+		dbFile        string
+		updatedDbFile string
 	}
 
 	DatabaseFile struct {
@@ -104,7 +106,7 @@ func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, 
 			"pid": os.Getpid(),
 		},
 	}
-	logger := *zap.Must(config.Build())
+	logger = zap.Must(config.Build())
 	for {
 		if _, err := os.Stat(LockFileName); err == nil {
 			lockExists = true
@@ -139,41 +141,49 @@ func NewOfflineDatabase(dbFile string, updatedDbFile string) (*OfflineDatabase, 
 	logger.Info("Database opened")
 	c := cron.New()
 	odb := &OfflineDatabase{
-		file:   &DatabaseFile{db},
-		logger: logger,
-		cron:   c,
+		file:          &DatabaseFile{db},
+		cron:          c,
+		dbFile:        dbFile,
+		updatedDbFile: updatedDbFile,
 	}
 
-	c.AddFunc("@hourly", func() {
-		if _, err := os.Stat(updatedDbFile); err == nil {
-			lockExists := false
-			if _, err := os.Stat(LockFileName); err == nil {
-				lockExists = true
-			}
-			if !lockExists {
-				logger.Info("Updating database")
-				odb.file.database.Close()
-				if err := os.Rename(updatedDbFile, dbFile); err != nil {
-					log.Panic(err)
-				}
-				db, err := mmap.Open(dbFile)
-				if err != nil {
-					log.Panic(err)
-				}
-				odb.file = &DatabaseFile{db}
-				logger.Info("Database updated")
-			}
-		}
-	})
+	c.AddFunc("@hourly", odb.Reload)
 	c.Start()
 	return odb, nil
 
 }
 
+func (odb *OfflineDatabase) Reload() {
+	if _, err := os.Stat(odb.updatedDbFile); err == nil {
+		lockExists := false
+		if _, err := os.Stat(LockFileName); err == nil {
+			lockExists = true
+		}
+		if !lockExists {
+			logger.Sugar().Infof("Updating database %p from cron job", odb.file)
+			odb.file.Close()
+			if err := os.Rename(odb.updatedDbFile, odb.dbFile); err != nil {
+				logger.Error("error replacing updated database", zap.Error(err))
+			}
+			db, err := mmap.Open(odb.dbFile)
+			if err != nil {
+				logger.Error("error loading updated database", zap.Error(err))
+			}
+			odb.file = &DatabaseFile{db}
+			logger.Sugar().Infof("Database updated %p from cron job", odb.file)
+		}
+	}
+}
+
+func (df *DatabaseFile) Close() error {
+	logger.Sugar().Infof("Closing database %p", df.database)
+	return df.database.Close()
+}
+
 // Close frees resources associated with the database.
 func (od *OfflineDatabase) Close() error {
 	od.cron.Stop()
-	return od.file.database.Close()
+	return od.file.Close()
 }
 
 // Pwned checks how frequently the given hash is included in the Pwned Passwords
@@ -381,11 +391,10 @@ func (od *OfflineDatabase) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// not a hash, hash it now
 			hash = sha1.Sum([]byte(pw))
 		}
-		od.logger.Sugar().Infof("using database file at %p", od.file)
-		od.logger.Sugar().Infof("checking password: %s", hex.EncodeToString(hash[:]))
+		logger.Sugar().Infof("checking password: %s", hex.EncodeToString(hash[:]))
 		frequency, err := od.Pwned(hash)
 		if err != nil {
-			od.logger.Sugar().Warnf("error checking password: %v", err)
+			logger.Sugar().Warnf("error checking password: %v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
